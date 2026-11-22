@@ -249,15 +249,6 @@ wheels = [
 ]
 
 [[package]]
-name = "frozendict"
-version = "2.5.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ed/45/7335e29396dde7c9ec00c4758c46bb7d4a9f07ca0a351ae58b814ca6b6a4/frozendict-2.5.1.tar.gz", hash = "sha256:b79b0c133220c5976ff05b8bfe3c1215119caa6255f477a309151fd5e2c2c0c3", size = 337443, upload-time = "2026-10-30T20:37:01.879Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/98/0902e074fb777b4064594a3a18773a50d661dbb8d73b7487fdf63ba088cc/frozendict-2.5.1-py3-none-any.whl", hash = "sha256:b6e602e286b912beca1e12615f50eda6c74646b440c8cfde34221adee6c98c5e", size = 18055, upload-time = "2026-10-30T20:37:00.614Z" },
-]
-
-[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -674,33 +665,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pydantic-frozendict"
-version = "0.1.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "frozendict" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ff/35/e95aabc3119425bd6344f55a8187d982e7cc7ccecfab090c6a26a5205c3f/pydantic_frozendict-0.1.3.tar.gz", hash = "sha256:6588750dc71e770ff1dd01f483360fe0bfe289170817ae4bb967c9baac528856", size = 109973, upload-time = "2026-04-18T21:29:17.51Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4a/db/4ce2ea4be7ea617ca05052ab59227b0cdf6542c84a42ffa9de0f148c9119/pydantic_frozendict-0.1.3-py3-none-any.whl", hash = "sha256:375421d36819a4dfa2ed8a575cf33ed846b04f930e6314064f0fe7b80f0d3658", size = 3867, upload-time = "2026-04-18T21:29:19.264Z" },
-]
-
-[[package]]
-name = "pydantic-logger"
-version = "0.1.21"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pydantic-frozendict" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/c4/7c6e1cfeda5bebbfdfc238bfd47100139a94f3d81670093293b16077e18b/pydantic_logger-0.1.21.tar.gz", hash = "sha256:1896c2107c7abbecd74cefdc1af0295031df95eda7a5df4a0cefe7a0b2f9993d", size = 153610, upload-time = "2026-07-15T22:14:17.39Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/50/f0fc01e30ee77fa10391952881ec1d02d00cb68f73fdce47e0827e42ecae/pydantic_logger-0.1.21-py3-none-any.whl", hash = "sha256:0f8aadcafe9af5bc8ce4e5a15c187d09cdf59a1e3fae46c801160d24f5f02d4a", size = 12305, upload-time = "2026-07-15T22:14:16.513Z" },
-]
-
-[[package]]
 name = "pydantic-settings"
 version = "2.16.3"
 source = { registry = "https://pypi.org/simple" }
@@ -857,7 +821,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
-    { name = "pydantic-logger" },
     { name = "pydantic-settings" },
 ]
 
@@ -878,7 +841,6 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "pydantic-logger", specifier = ">=0.1.21" },
     { name = "pydantic-settings", specifier = ">=2.13.0" },
 ]
 

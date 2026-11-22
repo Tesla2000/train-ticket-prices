@@ -1,9 +1,10 @@
 import asyncio
+from logging import Logger, getLogger
 
 import httpx
-from pydantic import Field
-from pydantic_logger import LoggingConfig, LoggingLevel, PydanticBuiltinLogger
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, InstanceOf
+from pydantic_logger import LoggingConfig, LoggingLevel
+from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
 
 from train_ticket_prices.models import Watch
 from train_ticket_prices.notification import (
@@ -17,8 +18,6 @@ from train_ticket_prices.price_source import (
     PriceQuote,
 )
 
-LOGGER = PydanticBuiltinLogger.model_validate({"name": __name__})
-
 
 class Main(BaseSettings):
     model_config = SettingsConfigDict(
@@ -27,6 +26,12 @@ class Main(BaseSettings):
         cli_kebab_case=True,
     )
 
+    logging: LoggingConfig = Field(
+        default_factory=lambda: LoggingConfig(level=LoggingLevel.INFO)
+    )
+    logger: CliSuppress[InstanceOf[Logger]] = Field(
+        exclude=True, default_factory=lambda: getLogger(__name__)
+    )
     watches: tuple[Watch, ...] = ()
     sources: tuple[AnyPriceSourceService, ...] = Field(
         default_factory=lambda: (
@@ -40,14 +45,14 @@ class Main(BaseSettings):
     interval_seconds: int | None = None
 
     async def cli_cmd(self) -> None:
-        LoggingConfig(level=LoggingLevel.INFO).apply()
+        self.logging.apply()
         seen: set[PriceQuote] = set()
         while True:
             for watch in self.watches:
                 for source in self.sources:
                     quotes = await source.fetch_quotes(watch)
                     if isinstance(quotes, Exception):
-                        LOGGER.warning("source failed: %s", quotes)
+                        self.logger.warning("source failed: %s", quotes)
                         continue
                     for quote in quotes:
                         if (
@@ -64,4 +69,4 @@ class Main(BaseSettings):
         for notifier in self.notifiers:
             result = await notifier.notify(quote)
             if isinstance(result, httpx.HTTPError):
-                LOGGER.error("notification failed: %s", result)
+                self.logger.error("notification failed: %s", result)

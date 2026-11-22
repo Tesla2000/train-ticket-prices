@@ -1,0 +1,26 @@
+name: price-watch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: price-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check prices and notify new drops
+        env:
+          WATCH__CONFIG__TOPIC: ${{ vars.NTFY_TOPIC }}
+          WATCH__HISTORY__TOPIC: ${{ vars.NTFY_TOPIC }}
+          WATCH__NOTIFIER__TOPIC: ${{ vars.NTFY_TOPIC }}
+        run: uv run python -m train_ticket_prices.ntfy_watch

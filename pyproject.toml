@@ -7,7 +7,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
-    "pydantic-logger>=0.1.21",
     "pydantic-settings>=2.13.0",
 ]
 classifiers = [

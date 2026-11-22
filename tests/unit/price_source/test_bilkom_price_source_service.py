@@ -124,6 +124,23 @@ async def test_trip_without_offered_trains_is_skipped() -> None:
 
 @pytest.mark.unit
 @run_async
+async def test_bus_leg_without_train_data_is_ignored() -> None:
+    bus_leg = (
+        '<div class="carrier-metadata walk" data-carrierId="HAFAS_NO_TRAIN" '
+        'data-startDate="23-11-2026 07:00 CET" data-departure="5100065" '
+        'data-arrival="5100028" data-stations="5100065;5100028"></div>'
+    )
+    page = TRIP_HTML.replace("</li>", f"{bus_leg}</li>")
+    service = BilkomPriceSourceService(client=bilkom_client(page=page))
+
+    quotes = await service.fetch_quotes(WATCH)
+
+    assert isinstance(quotes, tuple)
+    assert [quote.train_label for quote in quotes] == ["1320"]
+
+
+@pytest.mark.unit
+@run_async
 async def test_price_request_failure_yields_no_quote() -> None:
     service = BilkomPriceSourceService(client=bilkom_client(price_status=500))
 

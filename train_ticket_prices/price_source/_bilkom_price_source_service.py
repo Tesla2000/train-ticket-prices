@@ -8,7 +8,15 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    InstanceOf,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 
 from train_ticket_prices.models import Watch
 from train_ticket_prices.price_source._price_quote import PriceQuote
@@ -44,9 +52,20 @@ class _BilkomStationSearch(BaseModel):
     stations: tuple[_BilkomStation, ...]
 
 
-class _BilkomTripTag(BaseModel):
+class _BilkomAttributes(BaseModel):
+    """Raw HTML attributes: keys lowercased, values unescaped."""
+
     model_config = ConfigDict(frozen=True, extra="ignore")
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_attributes(cls, data: dict[str, str]) -> dict[str, str]:
+        return {
+            key.lower(): html.unescape(value) for key, value in data.items()
+        }
+
+
+class _BilkomTripTag(_BilkomAttributes):
     id: str = Field(default="1", validation_alias="data-id")
     trip_id: str = Field(validation_alias="data-trip-id")
 
@@ -63,9 +82,7 @@ class _BilkomCarrier(BaseModel):
     short_name: str = Field(alias="shortName")
 
 
-class _BilkomMetadataTag(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
+class _BilkomTrainTag(_BilkomAttributes):
     partoftrip: str = Field(validation_alias="data-partoftrip")
     partoftripobj: str = Field(validation_alias="data-partoftripobj")
     number: str = Field(validation_alias="data-number")
@@ -75,6 +92,20 @@ class _BilkomMetadataTag(BaseModel):
     departure: str = Field(validation_alias="data-departure")
     arrival: str = Field(validation_alias="data-arrival")
     stations: str = Field(default="", validation_alias="data-stations")
+
+
+class _BilkomWalkTag(_BilkomAttributes):
+    """Bus or walking leg: carries no train data."""
+
+    carrierid: Literal["HAFAS_NO_TRAIN"] = Field(
+        validation_alias="data-carrierid"
+    )
+
+
+AnyBilkomMetadataTag = _BilkomTrainTag | _BilkomWalkTag
+
+
+_BILKOM_METADATA_TAG = TypeAdapter(AnyBilkomMetadataTag)
 
 
 class _BilkomOfferedTrain(BaseModel):
@@ -215,12 +246,19 @@ class BilkomPriceSourceService(BaseModel):
     def _parse_trips(self, page: str) -> tuple[_BilkomTrip, ...]:
         trips = []
         for attributes, block in TRIP_PATTERN.findall(page):
-            tag = _BilkomTripTag.model_validate(self._attributes(attributes))
-            offered = tuple(
-                self._offered_train(
-                    _BilkomMetadataTag.model_validate(self._attributes(meta))
+            tag = _BilkomTripTag.model_validate(
+                dict(ATTRIBUTE_PATTERN.findall(attributes))
+            )
+            tags = tuple(
+                _BILKOM_METADATA_TAG.validate_python(
+                    dict(ATTRIBUTE_PATTERN.findall(meta))
                 )
                 for meta in METADATA_PATTERN.findall(block)
+            )
+            offered = tuple(
+                self._offered_train(tag)
+                for tag in tags
+                if isinstance(tag, _BilkomTrainTag)
             )
             if offered:
                 trips.append(
@@ -278,14 +316,7 @@ class BilkomPriceSourceService(BaseModel):
         )
 
     @staticmethod
-    def _attributes(tag: str) -> dict[str, str]:
-        return {
-            key.lower(): html.unescape(value)
-            for key, value in ATTRIBUTE_PATTERN.findall(tag)
-        }
-
-    @staticmethod
-    def _offered_train(tag: _BilkomMetadataTag) -> _BilkomOfferedTrain:
+    def _offered_train(tag: _BilkomTrainTag) -> _BilkomOfferedTrain:
         departure_date = tag.startdate
         return _BilkomOfferedTrain(
             partOfTripId=tag.partoftrip,
