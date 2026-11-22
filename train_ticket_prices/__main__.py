@@ -1,18 +1,6 @@
-from pydantic_settings import BaseSettings
 from pydantic_settings import CliApp
-from pydantic_settings import SettingsConfigDict
 
+from train_ticket_prices._main import Main
 
-class Main(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_nested_delimiter="__",
-        cli_parse_args=True,
-        cli_kebab_case=True,
-    )
-
-    async def cli_cmd(self) -> None:
-        pass
-
-
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":  # pragma: no branch
     CliApp.run(Main)
