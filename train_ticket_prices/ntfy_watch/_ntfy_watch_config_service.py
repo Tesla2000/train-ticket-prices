@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, InstanceOf
 
 from train_ticket_prices.models import DepartureRange, Watch
 from train_ticket_prices.ntfy_watch._ntfy_topic_reader import NtfyTopicReader
@@ -21,17 +21,13 @@ class NtfyWatchConfigService(BaseModel):
 
     server_url: str = "https://ntfy.sh"
     topic: str
-    token: SecretStr | None = None
     client: InstanceOf[httpx.AsyncClient] = Field(
         exclude=True, default_factory=httpx.AsyncClient
     )
 
     async def watches(self) -> tuple[Watch, ...] | Exception:
         messages = await NtfyTopicReader(
-            server_url=self.server_url,
-            topic=self.topic,
-            token=self.token,
-            client=self.client,
+            server_url=self.server_url, topic=self.topic, client=self.client
         ).messages("all")
         if isinstance(messages, Exception):
             return messages

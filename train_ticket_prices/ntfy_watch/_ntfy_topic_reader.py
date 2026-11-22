@@ -1,12 +1,5 @@
 import httpx
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    InstanceOf,
-    SecretStr,
-    ValidationError,
-)
+from pydantic import BaseModel, ConfigDict, Field, InstanceOf, ValidationError
 
 
 class _NtfyEvent(BaseModel):
@@ -21,7 +14,6 @@ class NtfyTopicReader(BaseModel):
 
     server_url: str = "https://ntfy.sh"
     topic: str
-    token: SecretStr | None = None
     client: InstanceOf[httpx.AsyncClient] = Field(
         exclude=True, default_factory=httpx.AsyncClient
     )
@@ -31,7 +23,6 @@ class NtfyTopicReader(BaseModel):
             response = await self.client.get(
                 f"{self.server_url}/{self.topic}/json",
                 params={"poll": "1", "since": since},
-                headers=self.auth_headers(self.token),
             )
             response.raise_for_status()
         except httpx.HTTPError as error:
@@ -46,13 +37,4 @@ class NtfyTopicReader(BaseModel):
             return error
         return tuple(
             event.message for event in events if event.event == "message"
-        )
-
-    @staticmethod
-    def auth_headers(token: SecretStr | None) -> httpx.Headers:
-        """Logged-in requests are rate limited per account, not per shared IP."""
-        if token is None:
-            return httpx.Headers()
-        return httpx.Headers(
-            {"Authorization": f"Bearer {token.get_secret_value()}"}
         )

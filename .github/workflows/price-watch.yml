@@ -1,6 +1,6 @@
 name: price-watch
 
-# Scheduled runs happen on Cloud Run (see README); this workflow is kept for manual runs.
+# No cron here: Google Cloud Scheduler dispatches this workflow every 5 minutes (see README).
 on:
   workflow_dispatch:
 

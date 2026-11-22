@@ -2,23 +2,18 @@
 
 Extracts train ticket prices
 
-## Deployment (Google Cloud Run)
+## Scheduling
 
-The ntfy watcher runs as a Cloud Run job that Cloud Scheduler starts every 5 minutes, 08:00-23:55 Warsaw time.
-At this volume it stays within the free tiers of Cloud Run, Cloud Scheduler, Cloud Build and Artifact Registry.
+The `price-watch` GitHub workflow does the checking. GitHub's cron is best-effort and often never fires, so the workflow
+has no `schedule` trigger. Instead, Google Cloud Scheduler dispatches it every 5 minutes, 08:00-23:55 Warsaw time.
+Both stay within their free tiers. The workflow needs the `NTFY_TOPIC` repository secret.
 
-One-time setup:
+Ntfy is called from GitHub, not from Google Cloud: ntfy.sh rate-limits free use per IP, and Google Cloud's
+outgoing IPs are shared and already over that limit.
 
-1. Create a Google Cloud project and link a billing account (required even when usage is free).
-2. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install) and run `gcloud auth login`.
+Setup, from Google Cloud Shell or anywhere `gcloud` is logged in to a project with billing linked:
 
-Deploy, and re-run after every change to redeploy:
+1. Create a fine-grained GitHub token for this repository with **Actions: Read and write**.
+2. Run `PROJECT_ID=my-project GITHUB_TOKEN=github_pat_... deploy/scheduler.sh`. Re-run it when the token expires.
 
-```bash
-PROJECT_ID=my-project NTFY_TOPIC=my-topic NTFY_TOKEN=tk_... deploy/cloud-run/deploy.sh
-```
-
-`NTFY_TOKEN` is an access token from a free ntfy.sh account (Account → Access tokens). Without it, ntfy.sh answers
-`429 Too Many Requests`, because it rate-limits anonymous requests per IP and Cloud Run's outgoing IPs are shared.
-
-`REGION` defaults to `europe-west1`. Run once by hand with `gcloud run jobs execute price-watch --region europe-west1`, and see runs under Cloud Run → Jobs → price-watch.
+Trigger a run now with `gcloud scheduler jobs run price-watch-github --location europe-west1`.
