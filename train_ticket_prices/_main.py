@@ -1,9 +1,8 @@
 import asyncio
-from logging import Logger, getLogger
+from logging import INFO, Logger, basicConfig, getLogger
 
 import httpx
 from pydantic import Field, InstanceOf
-from pydantic_logger import LoggingConfig, LoggingLevel
 from pydantic_settings import BaseSettings, CliSuppress, SettingsConfigDict
 
 from train_ticket_prices.models import Watch
@@ -26,9 +25,7 @@ class Main(BaseSettings):
         cli_kebab_case=True,
     )
 
-    logging: LoggingConfig = Field(
-        default_factory=lambda: LoggingConfig(level=LoggingLevel.INFO)
-    )
+    logging_level: int = INFO
     logger: CliSuppress[InstanceOf[Logger]] = Field(
         exclude=True, default_factory=lambda: getLogger(__name__)
     )
@@ -45,7 +42,7 @@ class Main(BaseSettings):
     interval_seconds: int | None = None
 
     async def cli_cmd(self) -> None:
-        self.logging.apply()
+        basicConfig(level=self.logging_level)
         seen: set[PriceQuote] = set()
         while True:
             for watch in self.watches:

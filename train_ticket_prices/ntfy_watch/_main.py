@@ -1,5 +1,5 @@
-from pydantic import Field
-from pydantic_logger import LoggingConfig, LoggingLevel
+from logging import INFO, basicConfig
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from train_ticket_prices.ntfy_watch._ntfy_watch_service import NtfyWatchService
@@ -12,11 +12,9 @@ class NtfyWatchMain(BaseSettings):
         cli_kebab_case=True,
     )
 
-    logging: LoggingConfig = Field(
-        default_factory=lambda: LoggingConfig(level=LoggingLevel.INFO)
-    )
+    logging_level: int = INFO
     watch: NtfyWatchService
 
     async def cli_cmd(self) -> None:
-        self.logging.apply()
+        basicConfig(level=self.logging_level)
         await self.watch.run_once()
