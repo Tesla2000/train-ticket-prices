@@ -15,7 +15,10 @@ One-time setup:
 Deploy, and re-run after every change to redeploy:
 
 ```bash
-PROJECT_ID=my-project NTFY_TOPIC=my-topic deploy/cloud-run/deploy.sh
+PROJECT_ID=my-project NTFY_TOPIC=my-topic NTFY_TOKEN=tk_... deploy/cloud-run/deploy.sh
 ```
+
+`NTFY_TOKEN` is an access token from a free ntfy.sh account (Account → Access tokens). Without it, ntfy.sh answers
+`429 Too Many Requests`, because it rate-limits anonymous requests per IP and Cloud Run's outgoing IPs are shared.
 
 `REGION` defaults to `europe-west1`. Run once by hand with `gcloud run jobs execute price-watch --region europe-west1`, and see runs under Cloud Run → Jobs → price-watch.

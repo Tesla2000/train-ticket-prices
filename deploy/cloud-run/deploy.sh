@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # Deploys the price watcher as a Cloud Run job that Cloud Scheduler starts every 5 minutes, 08:00-23:55 Warsaw time.
 # Safe to re-run: it updates the job and the schedule in place.
-# Usage: PROJECT_ID=my-project NTFY_TOPIC=my-topic deploy/cloud-run/deploy.sh
+# Usage: PROJECT_ID=my-project NTFY_TOPIC=my-topic NTFY_TOKEN=tk_... deploy/cloud-run/deploy.sh
+# NTFY_TOKEN is an ntfy.sh access token: Cloud Run shares outgoing IPs, so anonymous requests hit ntfy.sh's per-IP rate limit.
 set -euo pipefail
 
 : "${PROJECT_ID:?set PROJECT_ID}"
 : "${NTFY_TOPIC:?set NTFY_TOPIC}"
+: "${NTFY_TOKEN:?set NTFY_TOKEN}"
 REGION="${REGION:-europe-west1}"
 JOB="price-watch"
 SERVICE_ACCOUNT="${JOB}@${PROJECT_ID}.iam.gserviceaccount.com"
-TOPIC_ENV="WATCH__CONFIG__TOPIC=${NTFY_TOPIC},WATCH__HISTORY__TOPIC=${NTFY_TOPIC},WATCH__NOTIFIER__TOPIC=${NTFY_TOPIC}"
+TOPIC_ENV=""
+for PART in CONFIG HISTORY NOTIFIER; do
+  TOPIC_ENV+="WATCH__${PART}__TOPIC=${NTFY_TOPIC},WATCH__${PART}__TOKEN=${NTFY_TOKEN},"
+done
+TOPIC_ENV="${TOPIC_ENV%,}"
 
 cd "$(dirname "$0")/../.."
 

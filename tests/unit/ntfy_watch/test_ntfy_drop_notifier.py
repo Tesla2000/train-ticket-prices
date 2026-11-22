@@ -1,5 +1,6 @@
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from tests.unit.notification.test_notification_services import QUOTE
 from tests.unit.price_source.fixtures import run_async
@@ -51,6 +52,25 @@ async def test_notify_posts_message_with_link_and_title() -> None:
     assert posted[0].headers["Title"] == "Train price drop"
     assert posted[0].content.decode() == NtfyDropNotifier.message(BILKOM_QUOTE)
     assert "bilkom.pl/podroz?" in posted[0].content.decode()
+
+
+@pytest.mark.unit
+@run_async
+async def test_notify_sends_token_with_title() -> None:
+    posted: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        posted.append(request)
+        return httpx.Response(200)
+
+    await NtfyDropNotifier(
+        topic="trains",
+        token=SecretStr("tk_secret"),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ).notify(QUOTE)
+
+    assert posted[0].headers["Authorization"] == "Bearer tk_secret"
+    assert posted[0].headers["Title"] == "Train price drop"
 
 
 @pytest.mark.unit

@@ -2,6 +2,7 @@ import json
 
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from tests.unit.price_source.fixtures import run_async
 from train_ticket_prices.ntfy_watch._ntfy_topic_reader import NtfyTopicReader
@@ -34,6 +35,27 @@ async def test_returns_only_message_events_oldest_first() -> None:
     result = await reader(httpx.MockTransport(handler)).messages("12h")
 
     assert result == ("a", "b", "c")
+
+
+@pytest.mark.unit
+@run_async
+async def test_token_is_sent_as_bearer_authorization() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer tk_secret"
+        return httpx.Response(200, text="")
+
+    result = await NtfyTopicReader(
+        topic="trains",
+        token=SecretStr("tk_secret"),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ).messages("12h")
+
+    assert result == ()
+
+
+@pytest.mark.unit
+def test_no_token_sends_no_authorization() -> None:
+    assert "Authorization" not in NtfyTopicReader.auth_headers(None)
 
 
 @pytest.mark.unit
