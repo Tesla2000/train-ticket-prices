@@ -20,17 +20,22 @@ class NtfyDropNotifier(BaseModel):
     client: InstanceOf[httpx.AsyncClient] = Field(
         exclude=True, default_factory=httpx.AsyncClient
     )
+    pending: list[PriceQuote] = Field(default_factory=list, exclude=True)
 
-    async def flush(
-        self, quotes: tuple[PriceQuote, ...]
-    ) -> httpx.HTTPError | None:
-        """Posts all drops of one run as a single message."""
-        if not quotes:
+    def notify(self, quote: PriceQuote) -> None:
+        """Queues a drop; nothing is sent until flush."""
+        self.pending.append(quote)
+
+    async def flush(self) -> httpx.HTTPError | None:
+        """Posts all queued drops as a single message."""
+        if not self.pending:
             return None
+        content = self.batch_message(tuple(self.pending))
+        self.pending.clear()
         try:
             response = await self.client.post(
                 f"{self.server_url}/{self.topic}",
-                content=self.batch_message(quotes),
+                content=content,
                 headers={"Title": DROP_TITLE},
             )
             response.raise_for_status()

@@ -51,26 +51,24 @@ class NtfyWatchService(BaseModel):
             self.key(line) for text in sent for line in text.splitlines()
         }
         seen: set[str] = set()
-        drops: list[PriceQuote] = []
         for watch in watches:
             for source in self.sources:
                 quotes = await source.fetch_quotes(watch)
                 if isinstance(quotes, Exception):
                     self.logger.warning("source failed: %s", quotes)
                     continue
-                drops += self._new_drops(watch, quotes, sent_keys, seen)
-        result = await self.notifier.flush(tuple(drops))
+                self._notify_new(watch, quotes, sent_keys, seen)
+        result = await self.notifier.flush()
         if isinstance(result, httpx.HTTPError):
             self.logger.error("notification failed: %s", result)
 
-    def _new_drops(
+    def _notify_new(
         self,
         watch: Watch,
         quotes: tuple[PriceQuote, ...],
         sent_keys: set[str],
         seen: set[str],
-    ) -> list[PriceQuote]:
-        drops: list[PriceQuote] = []
+    ) -> None:
         for quote in quotes:
             if quote.price_pln >= watch.threshold_pln:
                 continue
@@ -89,8 +87,7 @@ class NtfyWatchService(BaseModel):
                 )
             else:
                 seen.add(key)
-                drops.append(quote)
-        return drops
+                self.notifier.notify(quote)
 
     @staticmethod
     def key(line: str) -> str:

@@ -44,10 +44,23 @@ def test_bilkom_link_prefills_stations_and_departure() -> None:
 
 @pytest.mark.unit
 @run_async
+async def test_notify_sends_nothing_until_flush() -> None:
+    posted: list[httpx.Request] = []
+    drop_notifier = notifier(posted=posted)
+
+    drop_notifier.notify(BILKOM_QUOTE)
+
+    assert posted == []
+
+
+@pytest.mark.unit
+@run_async
 async def test_flush_posts_message_with_link_and_title() -> None:
     posted: list[httpx.Request] = []
+    drop_notifier = notifier(posted=posted)
+    drop_notifier.notify(BILKOM_QUOTE)
 
-    result = await notifier(posted=posted).flush((BILKOM_QUOTE,))
+    result = await drop_notifier.flush()
 
     assert result is None
     assert posted[0].headers["Title"] == "Train price drop"
@@ -57,11 +70,14 @@ async def test_flush_posts_message_with_link_and_title() -> None:
 
 @pytest.mark.unit
 @run_async
-async def test_flush_posts_all_drops_as_one_message() -> None:
+async def test_flush_posts_all_queued_drops_as_one_message() -> None:
     posted: list[httpx.Request] = []
     other = QUOTE.model_copy(update={"price_pln": Decimal(30)})
+    drop_notifier = notifier(posted=posted)
+    drop_notifier.notify(QUOTE)
+    drop_notifier.notify(other)
 
-    await notifier(posted=posted).flush((QUOTE, other))
+    await drop_notifier.flush()
 
     assert len(posted) == 1
     assert posted[0].content.decode() == (
@@ -75,13 +91,14 @@ async def test_flush_posts_all_drops_as_one_message() -> None:
 async def test_flush_without_drops_posts_nothing() -> None:
     posted: list[httpx.Request] = []
 
-    assert await notifier(posted=posted).flush(()) is None
+    assert await notifier(posted=posted).flush() is None
     assert posted == []
 
 
 @pytest.mark.unit
 @run_async
 async def test_flush_returns_http_error_as_value() -> None:
-    assert isinstance(
-        await notifier(status=500).flush((QUOTE,)), httpx.HTTPError
-    )
+    drop_notifier = notifier(status=500)
+    drop_notifier.notify(QUOTE)
+
+    assert isinstance(await drop_notifier.flush(), httpx.HTTPError)
