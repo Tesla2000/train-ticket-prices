@@ -87,6 +87,52 @@ async def test_posts_drop_below_threshold() -> None:
 
 @pytest.mark.unit
 @run_async
+async def test_all_new_drops_of_a_run_are_sent_in_one_message() -> None:
+    later = QUOTE.model_copy(
+        update={"departure": QUOTE.departure.replace(hour=7)}
+    )
+
+    posted = await run(Scenario(sources=(FakeSource((QUOTE, later)),)))
+
+    combined = f"{NtfyDropNotifier.message(QUOTE)}\n\n{NtfyDropNotifier.message(later)}"
+
+    assert bodies(posted) == [combined]
+
+
+@pytest.mark.unit
+@run_async
+async def test_drops_listed_in_combined_history_are_not_sent_again() -> None:
+    later = QUOTE.model_copy(
+        update={"departure": QUOTE.departure.replace(hour=7)}
+    )
+    combined = f"{NtfyDropNotifier.message(QUOTE)}\n\n{NtfyDropNotifier.message(later)}"
+
+    posted = await run(
+        Scenario(history=(combined,), sources=(FakeSource((QUOTE, later)),))
+    )
+
+    assert posted == []
+
+
+@pytest.mark.unit
+@run_async
+async def test_only_undelivered_drops_are_sent_when_history_has_some() -> None:
+    later = QUOTE.model_copy(
+        update={"departure": QUOTE.departure.replace(hour=7)}
+    )
+
+    posted = await run(
+        Scenario(
+            history=(NtfyDropNotifier.message(QUOTE),),
+            sources=(FakeSource((QUOTE, later)),),
+        )
+    )
+
+    assert bodies(posted) == [NtfyDropNotifier.message(later)]
+
+
+@pytest.mark.unit
+@run_async
 async def test_price_at_or_above_threshold_is_not_sent() -> None:
     assert await run(Scenario(sources=(FakeSource((EXPENSIVE,)),))) == []
 

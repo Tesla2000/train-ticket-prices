@@ -47,23 +47,30 @@ class NtfyWatchService(BaseModel):
                 "sent history unavailable, notifying nothing: %s", sent
             )
             return
-        sent_keys = {self.key(text) for text in sent}
+        sent_keys = {
+            self.key(line) for text in sent for line in text.splitlines()
+        }
         seen: set[str] = set()
+        drops: list[PriceQuote] = []
         for watch in watches:
             for source in self.sources:
                 quotes = await source.fetch_quotes(watch)
                 if isinstance(quotes, Exception):
                     self.logger.warning("source failed: %s", quotes)
                     continue
-                await self._notify_new(watch, quotes, sent_keys, seen)
+                drops += self._new_drops(watch, quotes, sent_keys, seen)
+        result = await self.notifier.flush(tuple(drops))
+        if isinstance(result, httpx.HTTPError):
+            self.logger.error("notification failed: %s", result)
 
-    async def _notify_new(
+    def _new_drops(
         self,
         watch: Watch,
         quotes: tuple[PriceQuote, ...],
         sent_keys: set[str],
         seen: set[str],
-    ) -> None:
+    ) -> list[PriceQuote]:
+        drops: list[PriceQuote] = []
         for quote in quotes:
             if quote.price_pln >= watch.threshold_pln:
                 continue
@@ -82,11 +89,10 @@ class NtfyWatchService(BaseModel):
                 )
             else:
                 seen.add(key)
-                result = await self.notifier.notify(quote)
-                if isinstance(result, httpx.HTTPError):
-                    self.logger.error("notification failed: %s", result)
+                drops.append(quote)
+        return drops
 
     @staticmethod
-    def key(message: str) -> str:
+    def key(line: str) -> str:
         """Route and departure only, so a train listed by one source is not repeated by another."""
-        return " ".join(message.split()[:5])
+        return " ".join(line.split()[:5])

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import httpx
 import pytest
 
@@ -42,10 +44,10 @@ def test_bilkom_link_prefills_stations_and_departure() -> None:
 
 @pytest.mark.unit
 @run_async
-async def test_notify_posts_message_with_link_and_title() -> None:
+async def test_flush_posts_message_with_link_and_title() -> None:
     posted: list[httpx.Request] = []
 
-    result = await notifier(posted=posted).notify(BILKOM_QUOTE)
+    result = await notifier(posted=posted).flush((BILKOM_QUOTE,))
 
     assert result is None
     assert posted[0].headers["Title"] == "Train price drop"
@@ -55,7 +57,31 @@ async def test_notify_posts_message_with_link_and_title() -> None:
 
 @pytest.mark.unit
 @run_async
-async def test_notify_returns_http_error_as_value() -> None:
+async def test_flush_posts_all_drops_as_one_message() -> None:
+    posted: list[httpx.Request] = []
+    other = QUOTE.model_copy(update={"price_pln": Decimal(30)})
+
+    await notifier(posted=posted).flush((QUOTE, other))
+
+    assert len(posted) == 1
+    assert posted[0].content.decode() == (
+        f"{NtfyDropNotifier.message(QUOTE)}\n\n"
+        f"{NtfyDropNotifier.message(other)}"
+    )
+
+
+@pytest.mark.unit
+@run_async
+async def test_flush_without_drops_posts_nothing() -> None:
+    posted: list[httpx.Request] = []
+
+    assert await notifier(posted=posted).flush(()) is None
+    assert posted == []
+
+
+@pytest.mark.unit
+@run_async
+async def test_flush_returns_http_error_as_value() -> None:
     assert isinstance(
-        await notifier(status=500).notify(QUOTE), httpx.HTTPError
+        await notifier(status=500).flush((QUOTE,)), httpx.HTTPError
     )

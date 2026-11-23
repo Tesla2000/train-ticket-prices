@@ -21,17 +21,26 @@ class NtfyDropNotifier(BaseModel):
         exclude=True, default_factory=httpx.AsyncClient
     )
 
-    async def notify(self, quote: PriceQuote) -> httpx.HTTPError | None:
+    async def flush(
+        self, quotes: tuple[PriceQuote, ...]
+    ) -> httpx.HTTPError | None:
+        """Posts all drops of one run as a single message."""
+        if not quotes:
+            return None
         try:
             response = await self.client.post(
                 f"{self.server_url}/{self.topic}",
-                content=self.message(quote),
+                content=self.batch_message(quotes),
                 headers={"Title": DROP_TITLE},
             )
             response.raise_for_status()
         except httpx.HTTPError as error:
             return error
         return None
+
+    @staticmethod
+    def batch_message(quotes: tuple[PriceQuote, ...]) -> str:
+        return "\n\n".join(NtfyDropNotifier.message(quote) for quote in quotes)
 
     @staticmethod
     def message(quote: PriceQuote) -> str:
