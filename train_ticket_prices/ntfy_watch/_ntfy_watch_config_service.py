@@ -1,34 +1,30 @@
 from datetime import datetime
 from decimal import Decimal
 
-import httpx
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf
+from pydantic import BaseModel, ConfigDict
 
-from train_ticket_prices.models import DepartureRange, Watch
-from train_ticket_prices.ntfy_watch._ntfy_topic_reader import NtfyTopicReader
-from train_ticket_prices.stations.types import Station
+from train_ticket_prices.models import DepartureRange, PriceAlert
+from train_ticket_prices.ntfy_watch._ntfy_topic_reader import (
+    NtfySince,
+    NtfyTopicReader,
+)
+from train_ticket_prices.stations import Station
 
 
 class NtfyWatchConfigService(BaseModel):
-    """Reads the newest config message: one watch per line or per space.
+    """Reads the newest config message: one alert per line or per space.
 
-    Watch format: origin->destination;start->end;threshold
+    PriceAlert format: origin->destination;start->end;threshold
     The end is optional and defaults to 23:59 on the start day.
     Spaces are accepted because the ntfy app turns newlines into spaces.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    server_url: str = "https://ntfy.sh"
-    topic: str
-    client: InstanceOf[httpx.AsyncClient] = Field(
-        exclude=True, default_factory=httpx.AsyncClient
-    )
+    reader: NtfyTopicReader
 
-    async def watches(self) -> tuple[Watch, ...] | Exception:
-        messages = await NtfyTopicReader(
-            server_url=self.server_url, topic=self.topic, client=self.client
-        ).messages("all")
+    async def load_alerts(self) -> tuple[PriceAlert, ...] | Exception:
+        messages = await self.reader.read_messages(NtfySince("all"))
         if isinstance(messages, Exception):
             return messages
         configs = tuple(message for message in messages if ";" in message)
@@ -36,22 +32,24 @@ class NtfyWatchConfigService(BaseModel):
             return ()
         return self._parse(configs[-1])
 
-    def _parse(self, text: str) -> tuple[Watch, ...] | Exception:
-        watches: list[Watch] = []
+    def _parse(self, text: str) -> tuple[PriceAlert, ...] | Exception:
+        alerts: list[PriceAlert] = []
         for token in text.split():
-            watch = self._watch(token)
-            if isinstance(watch, Exception):
-                return watch
-            watches.append(watch)
-        return tuple(watches)
+            if ";" not in token:
+                continue
+            alert = self._parse_alert(token)
+            if isinstance(alert, Exception):
+                return alert
+            alerts.append(alert)
+        return tuple(alerts)
 
     @staticmethod
-    def _watch(line: str) -> Watch | Exception:
+    def _parse_alert(line: str) -> PriceAlert | Exception:
         try:
             route, when, threshold = line.split(";")
             origin, destination = route.split("->")
             start, _, end = when.partition("->")
-            return Watch(
+            return PriceAlert(
                 origin=Station(origin),
                 destination=Station(destination),
                 departure=DepartureRange(

@@ -13,8 +13,8 @@ class NtfyWatchMain(BaseSettings):
     )
 
     logging_level: int = INFO
-    watch: NtfyWatchService
+    service: NtfyWatchService
 
     async def cli_cmd(self) -> None:
         basicConfig(level=self.logging_level)
-        await self.watch.run_once()
+        await self.service.run_once()

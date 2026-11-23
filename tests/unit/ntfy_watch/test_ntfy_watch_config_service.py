@@ -6,11 +6,12 @@ import httpx
 import pytest
 
 from tests.unit.price_source.fixtures import WARSAW, run_async
-from train_ticket_prices.models import DepartureRange, Watch
-from train_ticket_prices.ntfy_watch._ntfy_watch_config_service import (
+from train_ticket_prices.models import DepartureRange, PriceAlert
+from train_ticket_prices.ntfy_watch import (
+    NtfyTopicReader,
     NtfyWatchConfigService,
 )
-from train_ticket_prices.stations.types import Station
+from train_ticket_prices.stations import Station
 
 
 def service(messages: list[str]) -> NtfyWatchConfigService:
@@ -19,11 +20,13 @@ def service(messages: list[str]) -> NtfyWatchConfigService:
         for message in messages
     )
     return NtfyWatchConfigService(
-        topic="trains",
-        client=httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda _request: httpx.Response(200, text=body)
-            )
+        reader=NtfyTopicReader(
+            topic="trains",
+            client=httpx.AsyncClient(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(200, text=body)
+                )
+            ),
         ),
     )
 
@@ -33,10 +36,10 @@ def service(messages: list[str]) -> NtfyWatchConfigService:
 async def test_parses_lines_with_explicit_range() -> None:
     result = await service(
         ["wroclaw-glowny->lodz-kaliska;2026-11-23T06:00->2026-11-23T12:00;30"]
-    ).watches()
+    ).load_alerts()
 
     assert result == (
-        Watch(
+        PriceAlert(
             origin=Station.WROCLAW_GLOWNY,
             destination=Station.LODZ_KALISKA,
             departure=DepartureRange(
@@ -53,7 +56,7 @@ async def test_parses_lines_with_explicit_range() -> None:
 async def test_range_end_defaults_to_end_of_start_day() -> None:
     result = await service(
         ["wroclaw-glowny->lodz-kaliska;2026-11-23T06:00;30"]
-    ).watches()
+    ).load_alerts()
 
     assert isinstance(result, tuple)
     assert result[0].departure.end == datetime(
@@ -71,7 +74,7 @@ async def test_newest_config_wins_and_drop_messages_are_ignored() -> None:
             "\n  \nwroclaw-glowny->lodz-kaliska;2026-11-24T06:00;40\n\n",
             "wroclaw-glowny -> lodz-kaliska 24.11 06:04 X: 20 PLN (koleo)",
         ]
-    ).watches()
+    ).load_alerts()
 
     assert isinstance(result, tuple)
     assert len(result) == 1
@@ -81,13 +84,15 @@ async def test_newest_config_wins_and_drop_messages_are_ignored() -> None:
 @pytest.mark.unit
 @run_async
 async def test_no_config_message_means_no_watches() -> None:
-    assert await service(["x"]).watches() == ()
+    assert await service(["x"]).load_alerts() == ()
 
 
 @pytest.mark.unit
 @run_async
 async def test_invalid_line_is_returned_as_value() -> None:
-    result = await service(["wroclaw-glowny;2026-11-23T06:00;30"]).watches()
+    result = await service(
+        ["wroclaw-glowny;2026-11-23T06:00;30"]
+    ).load_alerts()
 
     assert isinstance(result, ValueError)
 
@@ -97,7 +102,7 @@ async def test_invalid_line_is_returned_as_value() -> None:
 async def test_unknown_station_is_returned_as_value() -> None:
     result = await service(
         ["nowhere->lodz-kaliska;2026-11-23T06:00;30"]
-    ).watches()
+    ).load_alerts()
 
     assert isinstance(result, ValueError)
 
@@ -106,13 +111,17 @@ async def test_unknown_station_is_returned_as_value() -> None:
 @run_async
 async def test_http_error_is_returned_as_value() -> None:
     failing = NtfyWatchConfigService(
-        topic="trains",
-        client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _request: httpx.Response(500))
+        reader=NtfyTopicReader(
+            topic="trains",
+            client=httpx.AsyncClient(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(500)
+                )
+            ),
         ),
     )
 
-    assert isinstance(await failing.watches(), httpx.HTTPError)
+    assert isinstance(await failing.load_alerts(), httpx.HTTPError)
 
 
 @pytest.mark.unit
@@ -123,7 +132,18 @@ async def test_watches_separated_by_spaces_are_parsed() -> None:
         "wroclaw-glowny->lodz-chojny;2026-11-29T00:00->2026-11-29T23:59;40"
     )
 
-    result = await service([f"{first} {second}"]).watches()
+    result = await service([f"{first} {second}"]).load_alerts()
 
     assert isinstance(result, tuple)
-    assert [watch.departure.start.day for watch in result] == [28, 29]
+    assert [alert.departure.start.day for alert in result] == [28, 29]
+
+
+@pytest.mark.unit
+@run_async
+async def test_words_without_semicolon_are_skipped() -> None:
+    alert = "wroclaw-glowny->lodz-chojny;2026-11-28T00:00->2026-11-28T23:59;40"
+
+    result = await service([f"{alert} note from app"]).load_alerts()
+
+    assert isinstance(result, tuple)
+    assert len(result) == 1

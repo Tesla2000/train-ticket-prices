@@ -18,10 +18,13 @@ from pydantic import (
     model_validator,
 )
 
-from train_ticket_prices.models import Watch
+from train_ticket_prices.models import PriceAlert
 from train_ticket_prices.price_source._price_quote import PriceQuote
+from train_ticket_prices.price_source.bilkom._bilkom_price_quote import (
+    BilkomPriceQuote,
+)
 from train_ticket_prices.price_source.types import PriceSourceType
-from train_ticket_prices.stations.types import Station
+from train_ticket_prices.stations import Station
 
 BASE_URL = "https://bilkom.pl"
 BROWSER_HEADERS = {
@@ -175,21 +178,21 @@ class BilkomPriceSourceService(BaseModel):
     )
 
     async def fetch_quotes(
-        self, watch: Watch
+        self, alert: PriceAlert
     ) -> tuple[PriceQuote, ...] | httpx.HTTPError | ValidationError:
-        origin = await self._station_hafas_id(watch.origin)
+        origin = await self._station_hafas_id(alert.origin)
         if not isinstance(origin, str):
             return origin
-        destination = await self._station_hafas_id(watch.destination)
+        destination = await self._station_hafas_id(alert.destination)
         if not isinstance(destination, str):
             return destination
-        trips = await self._trips(watch, origin, destination)
+        trips = await self._trips(alert, origin, destination)
         if not isinstance(trips, tuple):
             return trips
         in_range = tuple(
             trip
             for trip in trips
-            if watch.departure.contains(trip.offered_trains[0].departure)
+            if alert.departure.contains(trip.offered_trains[0].departure)
         )
         batches = tuple(
             _BilkomJourneyRequest(
@@ -201,7 +204,7 @@ class BilkomPriceSourceService(BaseModel):
             await asyncio.gather(*(self._prices(batch) for batch in batches))
         )
         return tuple(
-            self._quote(watch, trip, price)
+            self._quote(alert, trip, price)
             for batch, response in zip(batches, responses, strict=True)
             if isinstance(response, _BilkomPriceResponse)
             for trip, price in zip(
@@ -225,7 +228,7 @@ class BilkomPriceSourceService(BaseModel):
         return found.stations[0].id if found.stations else ""
 
     async def _trips(
-        self, watch: Watch, origin: str, destination: str
+        self, alert: PriceAlert, origin: str, destination: str
     ) -> tuple[_BilkomTrip, ...] | httpx.HTTPError:
         try:
             response = await self.client.get(
@@ -233,7 +236,7 @@ class BilkomPriceSourceService(BaseModel):
                 params={
                     "poczatkowa": origin,
                     "docelowa": destination,
-                    "data": watch.departure.start.strftime(
+                    "data": alert.departure.start.strftime(
                         DEPARTURE_QUERY_FORMAT
                     ),
                 },
@@ -303,13 +306,12 @@ class BilkomPriceSourceService(BaseModel):
 
     @staticmethod
     def _quote(
-        watch: Watch, trip: _BilkomTrip, price: _BilkomPrice
-    ) -> PriceQuote:
+        alert: PriceAlert, trip: _BilkomTrip, price: _BilkomPrice
+    ) -> BilkomPriceQuote:
         first = trip.offered_trains[0]
-        return PriceQuote(
-            source=PriceSourceType.BILKOM,
-            origin=watch.origin,
-            destination=watch.destination,
+        return BilkomPriceQuote(
+            origin=alert.origin,
+            destination=alert.destination,
             departure=first.departure,
             train_label=first.train_number,
             price_pln=Decimal(price.total_price) / 100,

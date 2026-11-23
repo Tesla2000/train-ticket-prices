@@ -33,7 +33,7 @@ class StationEnumGenerator(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     type: Literal["station_enum_generator"] = "station_enum_generator"
-    output: Path = Path("train_ticket_prices/stations/types.py")
+    output: Path = Path("train_ticket_prices/stations.py")
 
     async def run(self) -> int:
         async with httpx.AsyncClient(timeout=60) as client:

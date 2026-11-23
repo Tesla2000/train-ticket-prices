@@ -5,14 +5,10 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from tests.unit.price_source.fixtures import WATCH, json_response, run_async
+from tests.unit.price_source.fixtures import ALERT, json_response, run_async
 from train_ticket_prices.price_source import (
     BilkomPriceSourceService,
     PriceQuote,
-    _bilkom_price_source_service,
-)
-from train_ticket_prices.price_source._bilkom_price_source_service import (
-    _BilkomPrice,
 )
 
 TRIP_HTML = (
@@ -32,7 +28,11 @@ PRICE_ATTEMPTS = 2
 
 @pytest.fixture(autouse=True)
 def no_retry_delay() -> Iterator[None]:
-    with patch.object(_bilkom_price_source_service, "RETRY_DELAY_SECONDS", 0):
+    with patch(
+        "train_ticket_prices.price_source.bilkom._bilkom_price_source_service"
+        ".RETRY_DELAY_SECONDS",
+        0,
+    ):
         yield
 
 
@@ -61,7 +61,7 @@ def bilkom_client(
 async def test_parses_trips_and_converts_grosze_to_pln() -> None:
     service = BilkomPriceSourceService(client=bilkom_client())
 
-    quotes = await service.fetch_quotes(WATCH)
+    quotes = await service.fetch_quotes(ALERT)
 
     assert isinstance(quotes, tuple)
     assert len(quotes) == 1
@@ -78,7 +78,7 @@ async def test_station_search_failure_is_returned_as_value() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    result = await BilkomPriceSourceService(client=client).fetch_quotes(WATCH)
+    result = await BilkomPriceSourceService(client=client).fetch_quotes(ALERT)
 
     assert isinstance(result, httpx.HTTPError)
 
@@ -93,7 +93,7 @@ async def test_unknown_station_name_returns_no_quotes() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    result = await BilkomPriceSourceService(client=client).fetch_quotes(WATCH)
+    result = await BilkomPriceSourceService(client=client).fetch_quotes(ALERT)
 
     assert result == ()
 
@@ -108,7 +108,7 @@ async def test_trips_page_failure_is_returned_as_value() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    result = await BilkomPriceSourceService(client=client).fetch_quotes(WATCH)
+    result = await BilkomPriceSourceService(client=client).fetch_quotes(ALERT)
 
     assert isinstance(result, httpx.HTTPError)
 
@@ -119,7 +119,7 @@ async def test_trip_without_offered_trains_is_skipped() -> None:
     page = '<li class="el" data-trip-id="trip-1"></li>'
     service = BilkomPriceSourceService(client=bilkom_client(page=page))
 
-    assert await service.fetch_quotes(WATCH) == ()
+    assert await service.fetch_quotes(ALERT) == ()
 
 
 @pytest.mark.unit
@@ -133,7 +133,7 @@ async def test_bus_leg_without_train_data_is_ignored() -> None:
     page = TRIP_HTML.replace("</li>", f"{bus_leg}</li>")
     service = BilkomPriceSourceService(client=bilkom_client(page=page))
 
-    quotes = await service.fetch_quotes(WATCH)
+    quotes = await service.fetch_quotes(ALERT)
 
     assert isinstance(quotes, tuple)
     assert [quote.train_label for quote in quotes] == ["1320"]
@@ -144,7 +144,7 @@ async def test_bus_leg_without_train_data_is_ignored() -> None:
 async def test_price_request_failure_yields_no_quote() -> None:
     service = BilkomPriceSourceService(client=bilkom_client(price_status=500))
 
-    assert await service.fetch_quotes(WATCH) == ()
+    assert await service.fetch_quotes(ALERT) == ()
 
 
 @pytest.mark.unit
@@ -160,7 +160,7 @@ async def test_zero_price_with_error_message_is_dropped() -> None:
     ]
     service = BilkomPriceSourceService(client=bilkom_client(prices=prices))
 
-    assert await service.fetch_quotes(WATCH) == ()
+    assert await service.fetch_quotes(ALERT) == ()
 
 
 @pytest.mark.unit
@@ -197,23 +197,8 @@ async def test_retries_price_request_after_upstream_error() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    quotes = await BilkomPriceSourceService(client=client).fetch_quotes(WATCH)
+    quotes = await BilkomPriceSourceService(client=client).fetch_quotes(ALERT)
 
     assert calls["price"] == PRICE_ATTEMPTS
     assert isinstance(quotes, tuple)
     assert quotes[0].price_pln == Decimal("45.50")
-
-
-@pytest.mark.unit
-def test_null_error_messages_means_no_errors() -> None:
-    price = _BilkomPrice.model_validate(
-        {
-            "id": "1",
-            "tripId": "trip",
-            "totalPrice": 4550,
-            "errorMessages": None,
-        }
-    )
-
-    assert price.error_messages is None
-    assert not price.error_messages

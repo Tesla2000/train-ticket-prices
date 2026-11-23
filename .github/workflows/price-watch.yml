@@ -19,7 +19,7 @@ jobs:
 
       - name: Check prices and notify new drops
         env:
-          WATCH__CONFIG__TOPIC: ${{ secrets.NTFY_TOPIC }}
-          WATCH__HISTORY__TOPIC: ${{ secrets.NTFY_TOPIC }}
-          WATCH__NOTIFIER__TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SERVICE__CONFIG__READER__TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SERVICE__HISTORY__TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SERVICE__NOTIFIER_FACTORY__NOTIFIER__TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: uv run python -m train_ticket_prices.ntfy_watch

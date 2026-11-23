@@ -2,9 +2,9 @@ import httpx
 import pytest
 
 from tests.unit.price_source.fixtures import (
+    ALERT,
     KOLEO_CONNECTIONS,
     KOLEO_STATIONS,
-    WATCH,
     json_response,
     run_async,
 )
@@ -41,7 +41,7 @@ def koleo_client(
 async def test_returns_quotes_within_departure_range() -> None:
     service = KoleoPriceSourceService(client=koleo_client())
 
-    quotes = await service.fetch_quotes(WATCH)
+    quotes = await service.fetch_quotes(ALERT)
 
     assert isinstance(quotes, tuple)
     assert [quote.train_label for quote in quotes] == ["IC 1320"]
@@ -56,7 +56,7 @@ async def test_unknown_station_returns_no_quotes() -> None:
         client=koleo_client(stations=KOLEO_STATIONS[1:])
     )
 
-    assert await service.fetch_quotes(WATCH) == ()
+    assert await service.fetch_quotes(ALERT) == ()
 
 
 @pytest.mark.unit
@@ -64,7 +64,7 @@ async def test_unknown_station_returns_no_quotes() -> None:
 async def test_http_failure_is_returned_as_value() -> None:
     service = KoleoPriceSourceService(client=koleo_client(stations_status=500))
 
-    result = await service.fetch_quotes(WATCH)
+    result = await service.fetch_quotes(ALERT)
 
     assert isinstance(result, httpx.HTTPError)
 
@@ -79,7 +79,7 @@ async def test_search_failure_is_returned_as_value() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    result = await KoleoPriceSourceService(client=client).fetch_quotes(WATCH)
+    result = await KoleoPriceSourceService(client=client).fetch_quotes(ALERT)
 
     assert isinstance(result, httpx.HTTPError)
 
@@ -99,7 +99,7 @@ async def test_search_pages_until_no_new_connections() -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    await KoleoPriceSourceService(client=client).fetch_quotes(WATCH)
+    await KoleoPriceSourceService(client=client).fetch_quotes(ALERT)
 
     assert len(calls) == SEARCH_PAGES
     assert calls[1].startswith(
@@ -120,5 +120,5 @@ async def test_failed_price_request_drops_that_connection() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     assert (
-        await KoleoPriceSourceService(client=client).fetch_quotes(WATCH) == ()
+        await KoleoPriceSourceService(client=client).fetch_quotes(ALERT) == ()
     )

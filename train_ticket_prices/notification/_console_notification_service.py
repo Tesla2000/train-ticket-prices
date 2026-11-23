@@ -24,3 +24,6 @@ class ConsoleNotificationService(BaseModel):
             quote.price_pln,
             quote.source.value,
         )
+
+    async def flush(self) -> None:
+        """Nothing is queued: notify already logged the drop."""

@@ -7,10 +7,13 @@ from zoneinfo import ZoneInfo
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, InstanceOf, ValidationError
 
-from train_ticket_prices.models import Watch
+from train_ticket_prices.models import PriceAlert
 from train_ticket_prices.price_source._price_quote import PriceQuote
+from train_ticket_prices.price_source.koleo._koleo_price_quote import (
+    KoleoPriceQuote,
+)
 from train_ticket_prices.price_source.types import PriceSourceType
-from train_ticket_prices.stations.types import Station
+from train_ticket_prices.stations import Station
 
 BASE_URL = "https://api.koleo.pl/v2/main"
 HEADERS = {
@@ -60,28 +63,28 @@ class KoleoPriceSourceService(BaseModel):
     )
 
     async def fetch_quotes(
-        self, watch: Watch
+        self, alert: PriceAlert
     ) -> tuple[PriceQuote, ...] | httpx.HTTPError | ValidationError:
         stations = await self._stations()
         if not isinstance(stations, tuple):
             return stations
-        start_id = self._station_id(stations, watch.origin)
-        end_id = self._station_id(stations, watch.destination)
+        start_id = self._station_id(stations, alert.origin)
+        end_id = self._station_id(stations, alert.destination)
         if start_id is None or end_id is None:
             return ()
-        connections = await self._connections(watch, start_id, end_id)
+        connections = await self._connections(alert, start_id, end_id)
         if not isinstance(connections, tuple):
             return connections
         within = tuple(
             connection
             for connection in connections
-            if watch.departure.contains(self._local(connection.departure))
+            if alert.departure.contains(self._local(connection.departure))
         )
         prices = await asyncio.gather(
             *(self._price(connection.uuid) for connection in within)
         )
         return tuple(
-            self._quote(watch, connection, price)
+            self._quote(alert, connection, price)
             for connection, price in zip(within, prices, strict=True)
             if isinstance(price, _KoleoPrice) and price.purchasable
         )
@@ -101,10 +104,10 @@ class KoleoPriceSourceService(BaseModel):
             return error
 
     async def _connections(
-        self, watch: Watch, start_id: int, end_id: int
+        self, alert: PriceAlert, start_id: int, end_id: int
     ) -> tuple[_KoleoConnection, ...] | httpx.HTTPError | ValidationError:
         found: tuple[_KoleoConnection, ...] = ()
-        after = watch.departure.start
+        after = alert.departure.start
         while True:
             page = await self._search(start_id, end_id, after)
             if not isinstance(page, tuple):
@@ -117,7 +120,7 @@ class KoleoPriceSourceService(BaseModel):
             last = max(
                 self._local(connection.departure) for connection in fresh
             )
-            if last >= watch.departure.end:
+            if last >= alert.departure.end:
                 break
             after = last
         return found
@@ -159,14 +162,13 @@ class KoleoPriceSourceService(BaseModel):
 
     def _quote(
         self,
-        watch: Watch,
+        alert: PriceAlert,
         connection: _KoleoConnection,
         price: _KoleoPrice,
-    ) -> PriceQuote:
-        return PriceQuote(
-            source=PriceSourceType.KOLEO,
-            origin=watch.origin,
-            destination=watch.destination,
+    ) -> KoleoPriceQuote:
+        return KoleoPriceQuote(
+            origin=alert.origin,
+            destination=alert.destination,
             departure=self._local(connection.departure),
             train_label=connection.legs[0].train_full_name,
             price_pln=price.price,
