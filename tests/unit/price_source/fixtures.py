@@ -8,12 +8,12 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from train_ticket_prices.models import DepartureRange, Watch
-from train_ticket_prices.stations.types import Station
+from train_ticket_prices.models import DepartureRange, PriceAlert
+from train_ticket_prices.stations import Station
 
 WARSAW = ZoneInfo("Europe/Warsaw")
 
-WATCH = Watch(
+ALERT = PriceAlert(
     origin=Station.WARSZAWA_CENTRALNA,
     destination=Station.KRAKOW_GLOWNY,
     departure=DepartureRange(

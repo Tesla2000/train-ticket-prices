@@ -5,9 +5,7 @@ from pydantic import Field
 from train_ticket_prices.notification._console_notification_service import (
     ConsoleNotificationService as ConsoleNotificationService,
 )
-from train_ticket_prices.notification._ntfy_notification_service import (
-    NtfyNotificationService as NtfyNotificationService,
-)
+from train_ticket_prices.notification.ntfy import NtfyNotificationService
 
 AnyNotificationService = Annotated[
     ConsoleNotificationService | NtfyNotificationService,
@@ -17,5 +15,4 @@ AnyNotificationService = Annotated[
 __all__ = [
     "AnyNotificationService",
     "ConsoleNotificationService",
-    "NtfyNotificationService",
 ]

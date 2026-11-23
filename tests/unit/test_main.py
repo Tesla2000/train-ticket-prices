@@ -2,7 +2,7 @@ import runpy
 import sys
 from datetime import datetime
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -10,13 +10,12 @@ from pydantic_settings import CliApp
 
 from tests.unit.notification.test_notification_services import QUOTE
 from tests.unit.price_source.fixtures import WARSAW, run_async
-from train_ticket_prices._main import Main
-from train_ticket_prices._price_watch import PriceWatch
-from train_ticket_prices.models import DepartureRange, Watch
+from train_ticket_prices import Main, PriceWatcher
+from train_ticket_prices.models import DepartureRange, PriceAlert
 from train_ticket_prices.price_source import PriceQuote
-from train_ticket_prices.stations.types import Station
+from train_ticket_prices.stations import Station
 
-WATCH = Watch(
+ALERT = PriceAlert(
     origin=Station.WARSZAWA_CENTRALNA,
     destination=Station.KRAKOW_GLOWNY,
     departure=DepartureRange(
@@ -33,7 +32,7 @@ class FakeSource:
         self.result = result
         self.calls = 0
 
-    async def fetch_quotes(self, _watch: Watch) -> object:
+    async def fetch_quotes(self, _watch: PriceAlert) -> object:
         self.calls += 1
         return self.result
 
@@ -43,13 +42,17 @@ class StopLoopError(Exception):
 
 
 class FakeNotifier:
-    def __init__(self, result: object = None) -> None:
-        self.result = result
+    def __init__(self, flush_result: object = None) -> None:
+        self.flush_result = flush_result
         self.sent: list[PriceQuote] = []
+        self.flushes = 0
 
-    async def notify(self, quote: PriceQuote) -> object:
+    async def notify(self, quote: PriceQuote) -> None:
         self.sent.append(quote)
-        return self.result
+
+    async def flush(self) -> object:
+        self.flushes += 1
+        return self.flush_result
 
 
 def main(
@@ -58,7 +61,6 @@ def main(
     interval_seconds: int | None = None,
 ) -> Main:
     return Main.model_construct(
-        watches=(WATCH,),
         sources=sources,
         notifiers=notifiers,
         interval_seconds=interval_seconds,
@@ -70,7 +72,7 @@ def main(
 async def test_notifies_only_quotes_below_threshold() -> None:
     notifier = FakeNotifier()
 
-    await main((FakeSource((QUOTE, EXPENSIVE)),), (notifier,)).cli_cmd()
+    await main((FakeSource((QUOTE, EXPENSIVE)),), (notifier,)).run((ALERT,))
 
     assert notifier.sent == [QUOTE]
 
@@ -83,21 +85,32 @@ async def test_failed_source_is_logged_and_others_still_run() -> None:
     await main(
         (FakeSource(httpx.ConnectError("down")), FakeSource((QUOTE,))),
         (notifier,),
-    ).cli_cmd()
+    ).run((ALERT,))
 
     assert notifier.sent == [QUOTE]
 
 
 @pytest.mark.unit
 @run_async
-async def test_failed_notifier_is_logged_and_others_still_run() -> None:
-    failing = FakeNotifier(result=httpx.ConnectError("down"))
+async def test_failed_flush_is_logged_and_others_still_flush() -> None:
+    failing = FakeNotifier(flush_result=httpx.ConnectError("down"))
     working = FakeNotifier()
 
-    await main((FakeSource((QUOTE,)),), (failing, working)).cli_cmd()
+    await main((FakeSource((QUOTE,)),), (failing, working)).run((ALERT,))
 
     assert failing.sent == [QUOTE]
     assert working.sent == [QUOTE]
+    assert failing.flushes == working.flushes == 1
+
+
+@pytest.mark.unit
+@run_async
+async def test_drops_are_flushed_after_each_check() -> None:
+    notifier = FakeNotifier()
+
+    await main((FakeSource((QUOTE,)),), (notifier,)).run((ALERT,))
+
+    assert notifier.flushes == 1
 
 
 @pytest.mark.unit
@@ -105,7 +118,7 @@ async def test_failed_notifier_is_logged_and_others_still_run() -> None:
 async def test_one_shot_run_checks_once() -> None:
     source = FakeSource(())
 
-    await main((source,), (FakeNotifier(),)).cli_cmd()
+    await main((source,), (FakeNotifier(),)).run((ALERT,))
 
     assert source.calls == 1
 
@@ -114,16 +127,16 @@ async def test_one_shot_run_checks_once() -> None:
 @run_async
 async def test_loop_notifies_same_quote_only_once_across_checks() -> None:
     class StoppingSource(FakeSource):
-        async def fetch_quotes(self, watch: Watch) -> object:
+        async def fetch_quotes(self, alert: PriceAlert) -> object:
             if self.calls == 2:  # noqa: PLR2004
                 raise StopLoopError
-            return await super().fetch_quotes(watch)
+            return await super().fetch_quotes(alert)
 
     notifier = FakeNotifier()
     source = StoppingSource((QUOTE,))
 
     with pytest.raises(StopLoopError):
-        await main((source,), (notifier,), interval_seconds=0).cli_cmd()
+        await main((source,), (notifier,), interval_seconds=0).run((ALERT,))
 
     assert source.calls == 2  # noqa: PLR2004
     assert notifier.sent == [QUOTE]
@@ -143,5 +156,19 @@ def test_main_is_built_from_cli_args(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main = Main()
 
-    assert isinstance(main, PriceWatch)
+    assert isinstance(main, PriceWatcher)
     assert main.interval_seconds == 60  # noqa: PLR2004
+
+
+@pytest.mark.unit
+@run_async
+async def test_cli_cmd_runs_one_pass_without_alerts() -> None:
+    run = AsyncMock()
+
+    with (
+        patch.object(sys, "argv", ["main"]),
+        patch.object(PriceWatcher, "run", run),
+    ):
+        await Main().cli_cmd()
+
+    run.assert_awaited_once_with(())
