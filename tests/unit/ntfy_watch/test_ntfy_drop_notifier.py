@@ -48,7 +48,7 @@ async def test_notify_sends_nothing_until_flush() -> None:
     posted: list[httpx.Request] = []
     drop_notifier = notifier(posted=posted)
 
-    drop_notifier.notify(BILKOM_QUOTE)
+    await drop_notifier.notify(BILKOM_QUOTE)
 
     assert posted == []
 
@@ -58,7 +58,7 @@ async def test_notify_sends_nothing_until_flush() -> None:
 async def test_flush_posts_message_with_link_and_title() -> None:
     posted: list[httpx.Request] = []
     drop_notifier = notifier(posted=posted)
-    drop_notifier.notify(BILKOM_QUOTE)
+    await drop_notifier.notify(BILKOM_QUOTE)
 
     result = await drop_notifier.flush()
 
@@ -72,10 +72,12 @@ async def test_flush_posts_message_with_link_and_title() -> None:
 @run_async
 async def test_flush_posts_all_queued_drops_as_one_message() -> None:
     posted: list[httpx.Request] = []
-    other = QUOTE.model_copy(update={"price_pln": Decimal(30)})
+    other = QUOTE.model_copy(
+        update={"departure": QUOTE.departure.replace(hour=7)}
+    )
     drop_notifier = notifier(posted=posted)
-    drop_notifier.notify(QUOTE)
-    drop_notifier.notify(other)
+    await drop_notifier.notify(QUOTE)
+    await drop_notifier.notify(other)
 
     await drop_notifier.flush()
 
@@ -99,6 +101,52 @@ async def test_flush_without_drops_posts_nothing() -> None:
 @run_async
 async def test_flush_returns_http_error_as_value() -> None:
     drop_notifier = notifier(status=500)
-    drop_notifier.notify(QUOTE)
+    await drop_notifier.notify(QUOTE)
 
     assert isinstance(await drop_notifier.flush(), httpx.HTTPError)
+
+
+@pytest.mark.unit
+@run_async
+async def test_notify_skips_drop_already_in_sent_history() -> None:
+    posted: list[httpx.Request] = []
+    drop_notifier = notifier(posted=posted).model_copy(
+        update={
+            "sent": frozenset(
+                {NtfyDropNotifier.key(NtfyDropNotifier.message(QUOTE))}
+            )
+        }
+    )
+
+    await drop_notifier.notify(QUOTE)
+
+    assert drop_notifier.pending == []
+    assert await drop_notifier.flush() is None
+    assert posted == []
+
+
+@pytest.mark.unit
+@run_async
+async def test_notify_skips_train_already_queued_from_another_source() -> None:
+    drop_notifier = notifier()
+    bilkom = QUOTE.model_copy(
+        update={"source": PriceSourceType.BILKOM, "price_pln": Decimal(41)}
+    )
+
+    await drop_notifier.notify(QUOTE)
+    await drop_notifier.notify(bilkom)
+
+    assert drop_notifier.pending == [QUOTE]
+
+
+@pytest.mark.unit
+def test_sent_keys_reads_every_line_of_combined_messages() -> None:
+    later = QUOTE.model_copy(
+        update={"departure": QUOTE.departure.replace(hour=7)}
+    )
+    combined = f"{NtfyDropNotifier.message(QUOTE)}\n\n{NtfyDropNotifier.message(later)}"
+
+    keys = NtfyDropNotifier.sent_keys((combined,))
+
+    assert NtfyDropNotifier.key(NtfyDropNotifier.message(QUOTE)) in keys
+    assert NtfyDropNotifier.key(NtfyDropNotifier.message(later)) in keys

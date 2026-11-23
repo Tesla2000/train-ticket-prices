@@ -3,7 +3,7 @@ from logging import Logger, getLogger
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, InstanceOf
 
-from train_ticket_prices.models import Watch
+from train_ticket_prices._main import Main
 from train_ticket_prices.ntfy_watch._ntfy_drop_notifier import NtfyDropNotifier
 from train_ticket_prices.ntfy_watch._ntfy_topic_reader import NtfyTopicReader
 from train_ticket_prices.ntfy_watch._ntfy_watch_config_service import (
@@ -13,7 +13,6 @@ from train_ticket_prices.price_source import (
     AnyPriceSourceService,
     BilkomPriceSourceService,
     KoleoPriceSourceService,
-    PriceQuote,
 )
 
 
@@ -47,49 +46,12 @@ class NtfyWatchService(BaseModel):
                 "sent history unavailable, notifying nothing: %s", sent
             )
             return
-        sent_keys = {
-            self.key(line) for text in sent for line in text.splitlines()
-        }
-        seen: set[str] = set()
-        for watch in watches:
-            for source in self.sources:
-                quotes = await source.fetch_quotes(watch)
-                if isinstance(quotes, Exception):
-                    self.logger.warning("source failed: %s", quotes)
-                    continue
-                self._notify_new(watch, quotes, sent_keys, seen)
-        result = await self.notifier.flush()
+        notifier = self.notifier.model_copy(
+            update={"sent": NtfyDropNotifier.sent_keys(sent), "pending": []}
+        )
+        await Main.model_construct(
+            watches=watches, sources=self.sources, notifiers=(notifier,)
+        ).check(set())
+        result = await notifier.flush()
         if isinstance(result, httpx.HTTPError):
             self.logger.error("notification failed: %s", result)
-
-    def _notify_new(
-        self,
-        watch: Watch,
-        quotes: tuple[PriceQuote, ...],
-        sent_keys: set[str],
-        seen: set[str],
-    ) -> None:
-        for quote in quotes:
-            if quote.price_pln >= watch.threshold_pln:
-                continue
-            key = self.key(self.notifier.message(quote))
-            if key in sent_keys:
-                self.logger.info(
-                    "skipped, already in history: %s (%s)",
-                    key,
-                    quote.source.value,
-                )
-            elif key in seen:
-                self.logger.info(
-                    "skipped, already listed this run: %s (%s)",
-                    key,
-                    quote.source.value,
-                )
-            else:
-                seen.add(key)
-                self.notifier.notify(quote)
-
-    @staticmethod
-    def key(line: str) -> str:
-        """Route and departure only, so a train listed by one source is not repeated by another."""
-        return " ".join(line.split()[:5])

@@ -45,22 +45,26 @@ class Main(BaseSettings):
         basicConfig(level=self.logging_level)
         seen: set[PriceQuote] = set()
         while True:
-            for watch in self.watches:
-                for source in self.sources:
-                    quotes = await source.fetch_quotes(watch)
-                    if isinstance(quotes, Exception):
-                        self.logger.warning("source failed: %s", quotes)
-                        continue
-                    for quote in quotes:
-                        if (
-                            quote.price_pln < watch.threshold_pln
-                            and quote not in seen
-                        ):
-                            seen.add(quote)
-                            await self._notify(quote)
+            await self.check(seen)
             if self.interval_seconds is None:
                 return
             await asyncio.sleep(self.interval_seconds)
+
+    async def check(self, seen: set[PriceQuote]) -> None:
+        """One pass over all watches and sources; each drop is notified once."""
+        for watch in self.watches:
+            for source in self.sources:
+                quotes = await source.fetch_quotes(watch)
+                if isinstance(quotes, Exception):
+                    self.logger.warning("source failed: %s", quotes)
+                    continue
+                for quote in quotes:
+                    if (
+                        quote.price_pln < watch.threshold_pln
+                        and quote not in seen
+                    ):
+                        seen.add(quote)
+                        await self._notify(quote)
 
     async def _notify(self, quote: PriceQuote) -> None:
         for notifier in self.notifiers:
