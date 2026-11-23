@@ -1,4 +1,5 @@
 import runpy
+import sys
 from datetime import datetime
 from decimal import Decimal
 from unittest.mock import patch
@@ -10,6 +11,7 @@ from pydantic_settings import CliApp
 from tests.unit.notification.test_notification_services import QUOTE
 from tests.unit.price_source.fixtures import WARSAW, run_async
 from train_ticket_prices._main import Main
+from train_ticket_prices._price_watch import PriceWatch
 from train_ticket_prices.models import DepartureRange, Watch
 from train_ticket_prices.price_source import PriceQuote
 from train_ticket_prices.stations.types import Station
@@ -133,3 +135,13 @@ def test_entrypoint_hands_main_to_cli_app() -> None:
         runpy.run_module("train_ticket_prices.__main__", run_name="__main__")
 
     cli_run.assert_called_once_with(Main)
+
+
+@pytest.mark.unit
+def test_main_is_built_from_cli_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["main", "--interval-seconds", "60"])
+
+    main = Main()
+
+    assert isinstance(main, PriceWatch)
+    assert main.interval_seconds == 60  # noqa: PLR2004
